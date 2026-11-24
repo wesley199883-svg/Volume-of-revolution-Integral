@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>旋转体体积可视化 · P4 Volumes of Revolution</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -12,6 +12,7 @@
     background: linear-gradient(180deg, #eaf1f8 0%, #f6f9fc 42%, #dde6ee 100%);
   }
   #scene { position: absolute; inset: 0; }
+  #scene canvas { touch-action: none; -webkit-tap-highlight-color: transparent; }
 
   /* ---------- 左侧控制面板 ---------- */
   #panel {
@@ -69,11 +70,44 @@
   #formula .vmain { color: #c0392b; font-weight: bold; font-size: 15px; }
   #formula .vapprox { color: #1e8449; }
   .divider { border-top: 1px dashed #ccd6dd; margin: 8px 0; }
+
+  /* ---------- 移动端悬浮切换按钮（仅小屏显示） ---------- */
+  .fab {
+    display: none; position: fixed; z-index: 20;
+    width: auto; padding: 9px 16px; border-radius: 22px;
+    font-size: 13px; box-shadow: 0 3px 12px rgba(30,60,90,0.3);
+    -webkit-tap-highlight-color: transparent;
+  }
+  #panelToggle { top: 12px; left: 12px; }
+  #formulaToggle { bottom: 12px; right: 12px; }
+
+  /* ---------- 响应式：手机 / 小屏 ---------- */
+  @media (max-width: 640px) {
+    #panel {
+      display: none;
+      left: 12px; top: 54px; width: calc(100vw - 24px);
+      max-height: calc(100vh - 120px); padding: 14px 16px;
+      border-radius: 12px;
+    }
+    #panel.open { display: block; }
+    #formula {
+      display: none;
+      right: 12px; bottom: 54px; width: calc(100vw - 24px);
+      padding: 12px 16px; border-radius: 12px;
+    }
+    #formula.open { display: block; }
+    .fab { display: block; }
+    #panel h1 { font-size: 15px; }
+  }
 </style>
 </head>
 <body>
 
 <div id="scene"></div>
+
+<!-- 移动端面板切换按钮 -->
+<button class="fab" id="panelToggle">⚙ 参数</button>
+<button class="fab" id="formulaToggle">📐 公式</button>
 
 <div id="panel">
   <h1>旋转体体积可视化</h1>
@@ -133,7 +167,8 @@
 
   <button id="play">▶ 演示旋转过程（360° 扫描）</button>
   <div class="hint" style="margin-top:8px">
-    🖱 左键拖拽旋转视角 · 滚轮缩放 · 右键平移<br>
+    🖱 电脑：左键拖拽旋转 · 滚轮缩放 · 右键平移<br>
+    📱 手机：单指拖拽旋转 · 双指缩放/平移<br>
     θ 调到 360° 即为完整旋转体；拖动滑块可观察"扫过"的过程。
   </div>
 </div>
@@ -190,6 +225,11 @@ camera.position.set(7, 5, 9);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
+// 移动端触摸：单指旋转视角，双指缩放 + 平移
+if (THREE.TOUCH) {
+  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.enablePan = true;
+}
 
 /* ---- 三点布光：主光(带阴影) + 天光/地光半球 + 逆光轮廓 ---- */
 scene.add(new THREE.HemisphereLight(0xdfeaf5, 0x9fb0c0, 0.85));
@@ -220,6 +260,12 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // 竖屏/横屏切换时按新宽高比缩放相机距离，保持用户已旋转的视角方向
+  const ns = fitScaleForAspect();
+  if (Math.abs(ns - fitScale) > 1e-3 && fitScale > 0) {
+    camera.position.sub(controls.target).multiplyScalar(ns / fitScale).add(controls.target);
+    fitScale = ns;
+  }
 });
 
 /* ================= 函数解析 ================= */
@@ -601,15 +647,23 @@ function updateSweep() {
 }
 
 /* ================= 相机自适应 ================= */
+/* 竖屏时水平视野更窄：按 1/aspect 拉远相机，避免旋转体被裁到屏幕外 */
+let fitScale = 1;
+function fitScaleForAspect() {
+  const asp = window.innerWidth / Math.max(window.innerHeight, 1);
+  return asp < 1 ? Math.min(1 / Math.max(asp, 0.42), 1.8) : 1;
+}
+
 function fitCamera() {
   const box = new THREE.Box3().setFromObject(world);
   if (box.isEmpty()) return;
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z) * 0.62 + 1;
+  fitScale = fitScaleForAspect();
   controls.target.copy(center);
   camera.position.copy(center)
-    .add(new THREE.Vector3(0.75, 0.55, 1.15).normalize().multiplyScalar(radius * 1.95));
+    .add(new THREE.Vector3(0.75, 0.55, 1.15).normalize().multiplyScalar(radius * 1.95 * fitScale));
   camera.near = radius / 100; camera.far = radius * 100;
   camera.updateProjectionMatrix();
   // 阴影相机范围随场景自适应，保证软阴影完整覆盖
@@ -825,6 +879,32 @@ function animate() {
 readInputs(false);
 rebuildAll();
 animate();
+
+/* ================= 移动端面板切换 ================= */
+function bindFab(btnId, panelId, openText, closeText) {
+  const btn = $(btnId), panel = $(panelId);
+  btn.addEventListener('click', () => {
+    const opening = !panel.classList.contains('open');
+    // 两个面板互斥展开，避免小屏互相遮挡
+    if (opening) {
+      panel.classList.add('open');
+      btn.textContent = closeText;
+      ['panel', 'formula'].forEach(id => {
+        if (id !== panelId) {
+          $(id).classList.remove('open');
+          const otherBtn = $(id === 'panel' ? 'panelToggle' : 'formulaToggle');
+          otherBtn.textContent = id === 'panel' ? '⚙ 参数' : '📐 公式';
+        }
+      });
+    } else {
+      panel.classList.remove('open');
+      btn.textContent = openText;
+    }
+  });
+}
+bindFab('panelToggle', 'panel', '⚙ 参数', '✕ 收起参数');
+bindFab('formulaToggle', 'formula', '📐 公式', '✕ 收起公式');
+// 手机端默认收起两个面板：3D 场景立即可见、可直接拖拽；点悬浮按钮展开参数
 </script>
 </body>
 </html>
