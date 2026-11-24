@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旋转体体积可视化 · P4 Volumes of Revolution</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100%; overflow: hidden;
+    font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    background: linear-gradient(180deg, #eaf1f8 0%, #f6f9fc 42%, #dde6ee 100%);
+  }
+  #scene { position: absolute; inset: 0; }
+
+  /* ---------- 左侧控制面板 ---------- */
+  #panel {
+    position: absolute; top: 16px; left: 16px; width: 308px;
+    background: rgba(255,255,255,0.94); border-radius: 14px;
+    box-shadow: 0 4px 24px rgba(30,60,90,0.18);
+    padding: 16px 18px; max-height: calc(100vh - 32px); overflow-y: auto;
+    font-size: 13px; color: #2c3e50; z-index: 10;
+  }
+  #panel h1 { font-size: 16px; color: #1a5276; margin-bottom: 2px; }
+  #panel .subtitle { font-size: 11px; color: #7f8c8d; margin-bottom: 12px; }
+  .group { margin-bottom: 12px; }
+  .group label { display: block; font-weight: bold; color: #34495e; margin-bottom: 4px; }
+  .group label .en { font-weight: normal; color: #95a5a6; font-size: 11px; margin-left: 4px; }
+  input[type="text"], input[type="number"], select {
+    width: 100%; padding: 6px 8px; border: 1px solid #b8c4cf; border-radius: 7px;
+    font-size: 13px; outline: none; background: #fff; color: #2c3e50;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus { border-color: #2e86c1; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  .radio-row { display: flex; gap: 6px; }
+  .radio-row label.radio {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 5px;
+    border: 1.5px solid #b8c4cf; border-radius: 8px; padding: 6px 4px;
+    cursor: pointer; font-weight: normal; margin: 0; transition: all .15s;
+  }
+  .radio-row input { display: none; }
+  .radio-row label.radio.on { border-color: #2e86c1; background: #eaf4fb; color: #1a5276; font-weight: bold; }
+  input[type="range"] { width: 100%; accent-color: #2e86c1; cursor: pointer; }
+  .slider-val { float: right; color: #2e86c1; font-weight: bold; }
+  .checks { display: flex; flex-direction: column; gap: 4px; }
+  .checks label { font-weight: normal; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  button {
+    width: 100%; padding: 9px; border: none; border-radius: 8px; cursor: pointer;
+    font-size: 14px; font-weight: bold; color: #fff; background: linear-gradient(135deg,#2e86c1,#1a5276);
+    transition: opacity .15s;
+  }
+  button:hover { opacity: 0.88; }
+  button.playing { background: linear-gradient(135deg,#e67e22,#ca6f1e); }
+  .hint { font-size: 11px; color: #95a5a6; line-height: 1.5; }
+  #err { color: #c0392b; font-size: 12px; margin-top: 4px; display: none; }
+
+  /* ---------- 公式结果面板 ---------- */
+  #formula {
+    position: absolute; right: 16px; bottom: 16px; width: 308px;
+    background: rgba(255,255,255,0.94); border-radius: 14px;
+    box-shadow: 0 4px 24px rgba(30,60,90,0.18);
+    padding: 14px 18px; font-size: 13px; color: #2c3e50; z-index: 10; line-height: 1.9;
+  }
+  #formula .ftitle { font-weight: bold; color: #1a5276; font-size: 13px; margin-bottom: 4px; }
+  #formula .fmath { font-family: "Cambria Math", "Times New Roman", serif; font-size: 15px; }
+  #formula .fmath .big-int { font-size: 22px; vertical-align: -4px; }
+  #formula .fmath sub, #formula .fmath sup { font-size: 11px; }
+  #formula .vmain { color: #c0392b; font-weight: bold; font-size: 15px; }
+  #formula .vapprox { color: #1e8449; }
+  .divider { border-top: 1px dashed #ccd6dd; margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<div id="scene"></div>
+
+<div id="panel">
+  <h1>旋转体体积可视化</h1>
+  <div class="subtitle">P4 · Volumes of Revolution（定积分求旋转体体积）</div>
+
+  <div class="group">
+    <label>预设示例 <span class="en">Presets</span></label>
+    <select id="preset">
+      <option value="">— 选择一个示例 —</option>
+      <option value="x^2|0|1|x">f(x) = x² , [0, 1] , 绕 x 轴（答案 π/5）</option>
+      <option value="sqrt(x)|0|4|x">f(x) = √x , [0, 4] , 绕 x 轴（答案 8π）</option>
+      <option value="sin(x)|0|pi|x">f(x) = sin x , [0, π] , 绕 x 轴（答案 π²/2）</option>
+      <option value="4-x^2|0|2|x">f(x) = 4 − x² , [0, 2] , 绕 x 轴</option>
+      <option value="exp(x)|0|1|x">f(x) = eˣ , [0, 1] , 绕 x 轴</option>
+      <option value="x^2|0|2|y">f(x) = x² , [0, 2] , 绕 y 轴（柱壳法，答案 8π）</option>
+      <option value="sqrt(x)|0|4|y">f(x) = √x , [0, 4] , 绕 y 轴（柱壳法）</option>
+    </select>
+  </div>
+
+  <div class="group">
+    <label>函数 <span class="en">y = f(x)</span></label>
+    <input type="text" id="fn" value="x^2" spellcheck="false">
+    <div class="hint">支持 sin cos tan sqrt exp ln abs，^ 表示幂，pi 表示 π，如 "2*x^2 - 3"</div>
+    <div id="err"></div>
+  </div>
+
+  <div class="group">
+    <div class="row">
+      <div><label>积分下限 a</label><input type="number" id="a" value="0" step="0.1"></div>
+      <div><label>积分上限 b</label><input type="number" id="b" value="1" step="0.1"></div>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>旋转轴 <span class="en">Axis of Rotation</span></label>
+    <div class="radio-row">
+      <label class="radio on" id="rbx"><input type="radio" name="axis" value="x" checked>绕 x 轴 · 圆盘法</label>
+      <label class="radio" id="rby"><input type="radio" name="axis" value="y">绕 y 轴 · 柱壳法</label>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>旋转角度 θ <span class="slider-val" id="thetaVal">360°</span> <span class="en">Sweep Angle</span></label>
+    <input type="range" id="theta" min="0" max="360" step="1" value="360">
+  </div>
+
+  <div class="group">
+    <label>分割数量 n <span class="slider-val" id="nVal">12</span> <span class="en">薄圆盘 / 圆柱壳</span></label>
+    <input type="range" id="n" min="4" max="120" step="1" value="12">
+  </div>
+
+  <div class="group checks">
+    <label><input type="checkbox" id="showSurface" checked> 显示旋转体表面 <span class="en">Solid</span></label>
+    <label><input type="checkbox" id="showSlices" checked> 显示分割薄片 <span class="en">Discs / Shells</span></label>
+    <label><input type="checkbox" id="showCurve" checked> 显示原曲线 <span class="en">Curve</span></label>
+  </div>
+
+  <button id="play">▶ 演示旋转过程（360° 扫描）</button>
+  <div class="hint" style="margin-top:8px">
+    🖱 左键拖拽旋转视角 · 滚轮缩放 · 右键平移<br>
+    θ 调到 360° 即为完整旋转体；拖动滑块可观察"扫过"的过程。
+  </div>
+</div>
+
+<div id="formula">
+  <div class="ftitle" id="fmethod">绕 x 轴旋转 · 圆盘法 Disk Method</div>
+  <div class="fmath" id="fint"></div>
+  <div class="divider"></div>
+  <div id="fnum"></div>
+</div>
+
+<!-- 全局错误捕获：任何加载/运行错误都显示可见提示，不再静默空白 -->
+<div id="fatal" style="display:none; position:fixed; inset:0; z-index:999; background:rgba(255,255,255,0.97);
+     padding:40px; color:#c0392b; font-size:15px; line-height:1.8; font-family:'Microsoft YaHei',sans-serif;"></div>
+<script>
+  window.__showFatal = function (msg) {
+    var el = document.getElementById('fatal');
+    el.style.display = 'block';
+    el.innerHTML = '<b>⚠ 应用加载失败</b><br>' + msg;
+  };
+  window.addEventListener('error', function (e) {
+    if (e && e.message) window.__showFatal(e.message + (e.filename ? '<br>文件: ' + e.filename : ''));
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    window.__showFatal('资源加载失败: ' + (e.reason && e.reason.message ? e.reason.message : e.reason));
+  });
+</script>
+
+<!-- 本地合并包：Three.js r160 + OrbitControls（离线可用，无 CDN 依赖） -->
+<script src="./bundle.js"></script>
+
+<script>
+// 注意：THREE 与 OrbitControls 由上方 bundle.js 提供
+
+/* ================= 基础场景 ================= */
+const container = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); // 高分屏抗锯齿（上限 2 防 4K 卡顿）
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;          // sRGB 输出，颜色更准
+renderer.toneMapping = THREE.ACESFilmicToneMapping;        // 电影级色调映射，色彩更有层次
+renderer.toneMappingExposure = 1.18;                       // 提亮补偿，避免 ACES 发灰
+renderer.shadowMap.enabled = true;                         // 软阴影，增强光影立体感
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+// 背景透明，由 CSS 渐变提供柔和的天光→地光过渡（提升整体层次感）
+renderer.setClearColor(0x000000, 0);
+
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 2000);
+camera.position.set(7, 5, 9);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+/* ---- 三点布光：主光(带阴影) + 天光/地光半球 + 逆光轮廓 ---- */
+scene.add(new THREE.HemisphereLight(0xdfeaf5, 0x9fb0c0, 0.85));
+const dir = new THREE.DirectionalLight(0xfff4e6, 1.25);    // 主光：暖白，略带暖调提升质感
+dir.position.set(8, 14, 9);
+dir.castShadow = true;
+dir.shadow.mapSize.set(2048, 2048);
+dir.shadow.bias = -0.0004;
+dir.shadow.radius = 4;
+scene.add(dir);
+const dir2 = new THREE.DirectionalLight(0xbdd7ee, 0.55);   // 逆光：冷蓝轮廓光，勾勒暗部边缘
+dir2.position.set(-9, -5, -10);
+scene.add(dir2);
+
+// 地面软阴影接收面（叠加在网格下方，只显示阴影）
+const shadowPlane = new THREE.Mesh(
+  new THREE.PlaneGeometry(200, 200),
+  new THREE.ShadowMaterial({ opacity: 0.20 })
+);
+shadowPlane.rotation.x = -Math.PI / 2;
+shadowPlane.receiveShadow = true;
+scene.add(shadowPlane);
+
+const world = new THREE.Group();
+scene.add(world);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ================= 函数解析 ================= */
+function compileFunction(src) {
+  let s = String(src).trim().replace(/π/g, 'pi').replace(/√/g, 'sqrt').replace(/²/g, '^2').replace(/³/g, '^3');
+  if (!s) throw new Error('函数不能为空');
+  if (!/^[\w\s+\-*/^().,]+$/.test(s)) throw new Error('含有不支持的字符');
+  // 隐式乘法：2x -> 2*x ； )( -> )*( ； )x -> )*x
+  s = s.replace(/(\d)\s*([a-zA-Z(])/g, '$1*$2')
+       .replace(/\)\s*\(/g, ')*(')
+       .replace(/\)\s*([a-zA-Z])/g, ')*$1');
+  s = s.replace(/\^/g, '**');
+  const fns = ['sin','cos','tan','asin','acos','atan','atan2','sqrt','cbrt','abs','exp','ln','log','floor','ceil','round','min','max','pow','sign'];
+  s = s.replace(new RegExp('\\b(' + fns.join('|') + ')\\b', 'g'),
+                m => (m === 'ln' ? 'Math.log' : 'Math.' + m));
+  s = s.replace(/\bpi\b/g, 'Math.PI').replace(/\be\b/g, 'Math.E');
+  const fn = new Function('x', '"use strict"; return (' + s + ');');
+  const t1 = fn(0.5), t2 = fn(1.7);
+  if (typeof t1 !== 'number' || typeof t2 !== 'number') throw new Error('表达式结果必须是数值');
+  return fn;
+}
+
+/* ================= 数值积分 ================= */
+function simpson(g, a, b, n = 2000) {
+  if (!isFinite(a) || !isFinite(b) || b <= a) return NaN;
+  const h = (b - a) / n;
+  const val = x => { const v = g(x); return isFinite(v) ? v : 0; };
+  let s = val(a) + val(b);
+  for (let i = 1; i < n; i++) s += (i % 2 ? 4 : 2) * val(a + i * h);
+  return s * h / 3;
+}
+
+/* ================= 状态 ================= */
+const S = {
+  fnText: 'x^2', fn: x => x * x,
+  a: 0, b: 1, axis: 'x',
+  n: 12, thetaDeg: 360,
+  showSurface: true, showSlices: true, showCurve: true,
+  rmax: 1, valid: true
+};
+
+let disposables = [];
+function track(...objs) { objs.forEach(o => disposables.push(o)); return objs[0]; }
+function clearWorld() {
+  while (world.children.length) world.remove(world.children[0]);
+  disposables.forEach(d => d.dispose && d.dispose());
+  disposables = [];
+  surfMesh = null; surfGeo = null; sweepLine = null;
+  wireLines = null; wireGeo = null;
+}
+
+/* ================= 采样与半径钳制 ================= */
+const SAMPLES = 220;
+function sampleCurve() {
+  const pts = [];
+  let valid = true;
+  for (let i = 0; i <= SAMPLES; i++) {
+    const x = S.a + (S.b - S.a) * i / SAMPLES;
+    const y = S.fn(x);
+    if (!isFinite(y)) valid = false;
+    pts.push([x, isFinite(y) ? y : 0]);
+  }
+  S.valid = valid;
+  return pts;
+}
+function computeRmax(pts) {
+  let m = 0.001;
+  for (const [, y] of pts) if (isFinite(y)) m = Math.max(m, Math.abs(y));
+  return m;
+}
+
+/* ================= 文字标签 ================= */
+function textSprite(text, color) {
+  // 画布宽度按文字实际长度自适应，避免长标签被裁切产生伪影
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d');
+  ctx.font = 'bold 92px Arial';
+  const tw = Math.ceil(ctx.measureText(text).width);
+  cv.width = Math.max(256, tw + 40); cv.height = 128;
+  ctx.font = 'bold 92px Arial';   // 尺寸改变后需重设字体
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const cx = cv.width / 2;
+  ctx.lineWidth = 12; ctx.strokeStyle = 'rgba(255,255,255,0.95)';  // 白描边：任何背景下都清晰
+  ctx.strokeText(text, cx, 68);
+  ctx.fillStyle = color;
+  ctx.fillText(text, cx, 68);
+  const tex = track(new THREE.CanvasTexture(cv));
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const mat = track(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  const sp = new THREE.Sprite(mat);
+  const h = 0.36;
+  sp.scale.set(h * cv.width / cv.height, h, 1);
+  return sp;
+}
+
+/* ================= 静态部分：坐标轴 / 网格 / 曲线 ================= */
+let rLine = null, sweepLine = null;
+
+function buildStatic(pts) {
+  const { a, b, axis } = S;
+  const rmax = computeRmax(pts);
+  S.rmax = rmax;
+  const pad = (b - a) * 0.18 + 0.2;
+  const Lx = Math.max(Math.abs(a), Math.abs(b)) + pad;
+  const Lz = rmax * 1.35 + 0.3;
+  const Ly = (axis === 'y') ? rmax * 1.3 + 0.4 : Lz;
+
+  // 网格（地面）：加深主线颜色，与背景形成对比
+  const gsize = 2 * Math.max(Lx, Ly, Lz, 2);
+  const grid = track(new THREE.GridHelper(gsize, 20, 0x9fb3c6, 0xd5e0ea));
+  grid.position.y = (axis === 'x') ? -(rmax * 1.35 + 0.35) : -0.35;
+  world.add(grid);
+  // 阴影接收面与网格齐平
+  shadowPlane.position.y = grid.position.y - 0.002;
+
+  // 坐标轴：高饱和配色
+  const mkAxis = (p1, p2, color) => {
+    const geo = track(new THREE.BufferGeometry().setFromPoints([p1, p2]));
+    const mat = track(new THREE.LineBasicMaterial({ color }));
+    world.add(new THREE.Line(geo, mat));
+  };
+  mkAxis(new THREE.Vector3(-Lx, 0, 0), new THREE.Vector3(Lx, 0, 0), 0xe03131);
+  mkAxis(new THREE.Vector3(0, -Ly * 0.4, 0), new THREE.Vector3(0, Ly, 0), 0x18a058);
+  mkAxis(new THREE.Vector3(0, 0, -Lz), new THREE.Vector3(0, 0, Lz), 0x1971c2);
+  const sx = textSprite('x', '#c92a2a'); sx.position.set(Lx + 0.3, 0, 0); world.add(sx);
+  const sy = textSprite('y', '#087f5b'); sy.position.set(0, Ly + 0.3, 0); world.add(sy);
+  const sz = textSprite('z', '#1864ab'); sz.position.set(0, 0, Lz + 0.3); world.add(sz);
+
+  // 旋转轴（高亮圆柱，投射柔和阴影）
+  const axisColor = 0x334155;
+  if (axis === 'x') {
+    const len = 2 * Lx;
+    const cyl = track(new THREE.CylinderGeometry(0.016, 0.016, len, 16));
+    cyl.rotateZ(Math.PI / 2);
+    const m = track(new THREE.MeshStandardMaterial({ color: axisColor, roughness: 0.5, metalness: 0.25 }));
+    const mesh = new THREE.Mesh(cyl, m);
+    mesh.castShadow = true;
+    world.add(mesh);
+  } else {
+    const len = Ly * 1.35;
+    const cyl = track(new THREE.CylinderGeometry(0.016, 0.016, len, 16));
+    const m = track(new THREE.MeshStandardMaterial({ color: axisColor, roughness: 0.5, metalness: 0.25 }));
+    const mesh = new THREE.Mesh(cyl, m);
+    mesh.position.y = len / 2 - Ly * 0.35;
+    mesh.castShadow = true;
+    world.add(mesh);
+  }
+
+  // 原曲线：实体管几何（比细线更锐利醒目）
+  if (S.showCurve) {
+    const cpts = pts.map(([x, y]) => new THREE.Vector3(x, y, 0));
+    const curve = new THREE.CatmullRomCurve3(cpts);
+    const tubeR = Math.max((S.b - S.a) * 0.008, 0.015);
+    const tube = track(new THREE.TubeGeometry(curve, 200, tubeR, 10, false));
+    const mat = track(new THREE.MeshStandardMaterial({
+      color: 0xe0244a, roughness: 0.35, metalness: 0.1,
+      emissive: 0x530a1a, emissiveIntensity: 0.35
+    }));
+    const mesh = new THREE.Mesh(tube, mat);
+    mesh.castShadow = true;
+    world.add(mesh);
+    const lb = textSprite('y = f(x)', '#c92a2a');
+    lb.position.set(b + 0.35, pts[pts.length - 1][1] + 0.25, 0);
+    world.add(lb);
+  }
+}
+
+/* ================= 动态部分：旋转面 / 薄片 / 扫描线 ================= */
+let surfGeo = null, surfMesh = null;
+
+function buildSurface(pts) {
+  const { axis, a, b } = S;
+  const segU = 180, segV = 72;
+  const RMAX = Math.max((b - a) * 2.2, S.rmax * 1.15, 2); // 渲染钳制上限
+
+  surfGeo = track(new THREE.BufferGeometry());
+  const vertCount = (segU + 1) * (segV + 1);
+  const positions = new Float32Array(vertCount * 3);
+  const indices = [];
+  for (let i = 0; i < segU; i++)
+    for (let j = 0; j < segV; j++) {
+      const p = i * (segV + 1) + j, q = p + segV + 1;
+      indices.push(p, q, p + 1, q, q + 1, p + 1);
+    }
+  surfGeo.setIndex(indices);
+  surfGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const mat = track(new THREE.MeshPhongMaterial({
+    color: 0x2f7ed8, side: THREE.DoubleSide,
+    transparent: true, opacity: 0.48, shininess: 90,
+    specular: 0x88bbff,
+    emissive: 0x0a2a52, emissiveIntensity: 0.4,   // 自发光底色：避免暗面发灰，保持色彩鲜明
+    depthWrite: false
+  }));
+  surfMesh = new THREE.Mesh(surfGeo, mat);
+  surfMesh.visible = S.showSurface;
+  surfMesh.castShadow = true;
+  world.add(surfMesh);
+  surfMesh.userData = { segU, segV, RMAX };
+  updateSurface();
+}
+
+// 曲面上的点：绕 x 轴半径 = |f(x)|；绕 y 轴半径 = |x|（柱壳法对应）
+function surfacePt(x, th, RMAX) {
+  let y = S.fn(x); if (!isFinite(y)) y = 0;
+  const c = Math.cos(th), s = Math.sin(th);
+  if (S.axis === 'x') {
+    const r = Math.min(Math.abs(y), RMAX);
+    return [x, r * c, r * s];
+  }
+  const r = Math.min(Math.abs(x), RMAX);
+  return [r * c, y, r * s];
+}
+
+function updateSurface() {
+  const { segU, segV, RMAX } = surfMesh.userData;
+  const thMax = S.thetaDeg * Math.PI / 180;
+  const pos = surfGeo.attributes.position.array;
+  const { a, b } = S;
+  let k = 0;
+  for (let i = 0; i <= segU; i++) {
+    const x = a + (b - a) * i / segU;
+    for (let j = 0; j <= segV; j++) {
+      const p = surfacePt(x, thMax * j / segV, RMAX);
+      pos[k++] = p[0]; pos[k++] = p[1]; pos[k++] = p[2];
+    }
+  }
+  surfGeo.attributes.position.needsUpdate = true;
+  surfGeo.computeVertexNormals();
+  if (wireLines) updateWire();
+}
+
+/* 经纬网格线：勾勒旋转面的曲面形态，增强细节锐度与立体层次 */
+let wireGeo = null, wireLines = null;
+function buildWire() {
+  const cfg = { NL: 8, NS: 60, NR: 6, NA: 48, RMAX: surfMesh.userData.RMAX };
+  const segCount = cfg.NL * cfg.NS + cfg.NR * cfg.NA;
+  wireGeo = track(new THREE.BufferGeometry());
+  wireGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segCount * 6), 3));
+  const mat = track(new THREE.LineBasicMaterial({
+    color: 0x0b5fbf, transparent: true, opacity: 0.55, depthWrite: false
+  }));
+  wireLines = new THREE.LineSegments(wireGeo, mat);
+  wireLines.visible = S.showSurface;
+  wireLines.userData = cfg;
+  world.add(wireLines);
+  updateWire();
+}
+
+function updateWire() {
+  if (!wireLines) return;
+  const { NL, NS, NR, NA, RMAX } = wireLines.userData;
+  const thMax = S.thetaDeg * Math.PI / 180;
+  const pos = wireGeo.attributes.position.array;
+  const { a, b } = S;
+  let k = 0;
+  const put = (x, th) => {
+    const p = surfacePt(x, th, RMAX);
+    pos[k++] = p[0]; pos[k++] = p[1]; pos[k++] = p[2];
+  };
+  for (let i = 0; i < NL; i++) {                    // 经线（平行旋转轴方向）
+    const th = thMax * (i + 0.5) / NL;
+    for (let j = 0; j < NS; j++) {
+      put(a + (b - a) * j / NS, th);
+      put(a + (b - a) * (j + 1) / NS, th);
+    }
+  }
+  for (let i = 0; i < NR; i++) {                    // 纬线（圆环）
+    const x = a + (b - a) * (i + 0.5) / NR;
+    for (let j = 0; j < NA; j++) {
+      put(x, thMax * j / NA);
+      put(x, thMax * (j + 1) / NA);
+    }
+  }
+  wireGeo.attributes.position.needsUpdate = true;
+}
+
+function buildSlices(pts) {
+  const { a, b, axis, fn, n } = S;
+  const dx = (b - a) / n;
+  const RMAX = Math.max((b - a) * 2.2, S.rmax * 1.15, 2);
+  const fmax = Math.max(S.rmax * 1.15, 0.001);
+  const discMat = track(new THREE.MeshPhongMaterial({
+    color: 0xf59e0b, transparent: true, opacity: 0.62,
+    shininess: 80, specular: 0xffd27a,
+    emissive: 0x5c3a00, emissiveIntensity: 0.45, side: THREE.DoubleSide
+  }));
+  const shellMat = track(new THREE.MeshPhongMaterial({
+    color: 0x12b76a, transparent: true, opacity: 0.55,
+    shininess: 80, specular: 0x8fe6bb,
+    emissive: 0x023a1e, emissiveIntensity: 0.45, side: THREE.DoubleSide
+  }));
+  const discRimMat = track(new THREE.LineBasicMaterial({ color: 0x9a5800, transparent: true, opacity: 0.9 }));
+  const shellRimMat = track(new THREE.LineBasicMaterial({ color: 0x046c40, transparent: true, opacity: 0.9 }));
+
+  const circlePts = (radius, plane) => {
+    const arr = [];
+    for (let i = 0; i < 64; i++) {
+      const t = i / 64 * Math.PI * 2, c = Math.cos(t) * radius, s = Math.sin(t) * radius;
+      arr.push(plane === 'yz' ? new THREE.Vector3(0, c, s) : new THREE.Vector3(c, 0, s));
+    }
+    return arr;
+  };
+
+  for (let k = 0; k < n; k++) {
+    const xm = a + (k + 0.5) * dx;
+    let y = fn(xm);
+    if (!isFinite(y)) continue;
+    if (axis === 'x') {
+      // 圆盘：半径 |f(x)|，厚度 dx
+      const r = Math.min(Math.abs(y), RMAX);
+      const geo = track(new THREE.CylinderGeometry(r, r, dx * 0.88, 40));
+      geo.rotateZ(Math.PI / 2);
+      const mesh = new THREE.Mesh(geo, discMat);
+      mesh.position.set(xm, 0, 0);
+      mesh.visible = S.showSlices;
+      mesh.castShadow = true;
+      mesh.userData.isSlice = true;
+      world.add(mesh);
+      // 轮廓环：勾出每层圆盘边界，增强分层与锐度
+      const rim = new THREE.LineLoop(track(new THREE.BufferGeometry().setFromPoints(circlePts(r, 'yz'))), discRimMat);
+      rim.position.set(xm + dx * 0.44, 0, 0);
+      rim.visible = S.showSlices;
+      rim.userData.isSlice = true;
+      world.add(rim);
+    } else {
+      // 圆柱壳：半径 x，高 f(x)
+      const r = Math.abs(xm);
+      if (r < 1e-9) continue;
+      const h = Math.min(Math.abs(y), fmax);
+      if (h < 1e-9) continue;
+      const geo = track(new THREE.CylinderGeometry(r, r, h, 36, 1, true));
+      const mesh = new THREE.Mesh(geo, shellMat);
+      mesh.position.set(0, y >= 0 ? h / 2 : -h / 2, 0);
+      mesh.visible = S.showSlices;
+      mesh.castShadow = true;
+      mesh.userData.isSlice = true;
+      world.add(mesh);
+      // 顶部轮廓环
+      const rim = new THREE.LineLoop(track(new THREE.BufferGeometry().setFromPoints(circlePts(r, 'xz'))), shellRimMat);
+      rim.position.set(0, y >= 0 ? h : -h, 0);
+      rim.visible = S.showSlices;
+      rim.userData.isSlice = true;
+      world.add(rim);
+    }
+  }
+}
+
+function buildSweep(pts) {
+  const { a, b, axis, fn } = S;
+  const xm = (a + b) / 2;
+  let y = fn(xm); if (!isFinite(y)) y = 0;
+  const RMAX = Math.max((b - a) * 2.2, S.rmax * 1.15, 2);
+  const r = Math.min(Math.abs(y), RMAX);
+  sweepLine = new THREE.Line(
+    track(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()])),
+    track(new THREE.LineBasicMaterial({ color: 0xe0244a }))
+  );
+  sweepLine.userData = { xm, r, y };
+  world.add(sweepLine);
+  updateSweep();
+}
+
+function updateSweep() {
+  if (!sweepLine) return;
+  const { xm, r, y } = sweepLine.userData;
+  const th = S.thetaDeg * Math.PI / 180;
+  const c = Math.cos(th), s = Math.sin(th);
+  const p = sweepLine.geometry.attributes.position.array;
+  if (S.axis === 'x') {
+    p[0] = xm; p[1] = 0; p[2] = 0;
+    p[3] = xm; p[4] = r * c; p[5] = r * s;
+  } else {
+    p[0] = 0; p[1] = y; p[2] = 0;
+    p[3] = xm * c; p[4] = y; p[5] = xm * s;
+  }
+  sweepLine.geometry.attributes.position.needsUpdate = true;
+}
+
+/* ================= 相机自适应 ================= */
+function fitCamera() {
+  const box = new THREE.Box3().setFromObject(world);
+  if (box.isEmpty()) return;
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const radius = Math.max(size.x, size.y, size.z) * 0.62 + 1;
+  controls.target.copy(center);
+  camera.position.copy(center)
+    .add(new THREE.Vector3(0.75, 0.55, 1.15).normalize().multiplyScalar(radius * 1.95));
+  camera.near = radius / 100; camera.far = radius * 100;
+  camera.updateProjectionMatrix();
+  // 阴影相机范围随场景自适应，保证软阴影完整覆盖
+  const sc = dir.shadow.camera;
+  sc.left = -radius * 1.6; sc.right = radius * 1.6;
+  sc.top = radius * 1.6; sc.bottom = -radius * 1.6;
+  sc.near = 0.5; sc.far = radius * 12;
+  sc.updateProjectionMatrix();
+  dir.position.copy(center).add(new THREE.Vector3(0.6, 1.1, 0.7).normalize().multiplyScalar(radius * 3));
+  controls.update();
+}
+
+/* ================= 公式面板 ================= */
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+function fmtNum(v) {
+  if (!isFinite(v)) return '—';
+  return Math.abs(v) >= 1e5 || (Math.abs(v) < 1e-4 && v !== 0) ? v.toExponential(3) : v.toFixed(4);
+}
+function updateFormula() {
+  const { a, b, axis, fn, n } = S;
+  const mEl = document.getElementById('fmethod');
+  const iEl = document.getElementById('fint');
+  const nEl = document.getElementById('fnum');
+
+  if (b <= a) {
+    mEl.textContent = '提示：需要 b > a';
+    iEl.innerHTML = ''; nEl.innerHTML = '';
+    return;
+  }
+
+  const fStr = esc(S.fnText);
+  if (axis === 'x') {
+    mEl.textContent = '绕 x 轴旋转 · 圆盘法 Disk Method';
+    iEl.innerHTML =
+      'V = π <span class="big-int">∫</span><sub>' + a + '</sub><sup>' + b + '</sup> [f(x)]² dx<br>' +
+      '&nbsp;&nbsp;= π <span class="big-int">∫</span><sub>' + a + '</sub><sup>' + b + '</sup> (' + fStr + ')² dx';
+    const V = Math.PI * simpson(x => { const y = fn(x); return isFinite(y) ? y * y : 0; }, a, b);
+    let approx = 0; const dx = (b - a) / n;
+    for (let k = 0; k < n; k++) {
+      const xm = a + (k + 0.5) * dx, y = fn(xm);
+      if (isFinite(y)) approx += Math.PI * y * y * dx;
+    }
+    nEl.innerHTML =
+      '数值积分结果：<span class="vmain">V ≈ ' + fmtNum(V) + '</span><br>' +
+      'n = ' + n + ' 个薄圆盘近似：<span class="vapprox">Vₙ ≈ ' + fmtNum(approx) + '</span> <span class="hint">（n 越大越精确）</span>';
+  } else {
+    mEl.textContent = '绕 y 轴旋转 · 柱壳法 Cylindrical Shell Method';
+    iEl.innerHTML =
+      'V = 2π <span class="big-int">∫</span><sub>' + a + '</sub><sup>' + b + '</sup> x · f(x) dx<br>' +
+      '&nbsp;&nbsp;= 2π <span class="big-int">∫</span><sub>' + a + '</sub><sup>' + b + '</sup> x (' + fStr + ') dx';
+    const V = 2 * Math.PI * simpson(x => { const y = fn(x); return isFinite(y) ? x * y : 0; }, a, b);
+    let approx = 0; const dx = (b - a) / n;
+    for (let k = 0; k < n; k++) {
+      const xm = a + (k + 0.5) * dx, y = fn(xm);
+      if (isFinite(y)) approx += 2 * Math.PI * xm * y * dx;
+    }
+    let warn = '';
+    if (a < 0) warn = '<br><span style="color:#c0392b">⚠ 柱壳法公式 V = 2π∫ x·f(x) dx 通常要求 a ≥ 0，否则薄壳会重叠，结果需按 washer 法另算。</span>';
+    nEl.innerHTML =
+      '数值积分结果：<span class="vmain">V ≈ ' + fmtNum(V) + '</span><br>' +
+      'n = ' + n + ' 个圆柱壳近似：<span class="vapprox">Vₙ ≈ ' + fmtNum(approx) + '</span>' + warn;
+  }
+  if (!S.valid) nEl.innerHTML += '<br><span style="color:#c0392b">⚠ 函数在区间内存在未定义点（如除以 0），计算按 0 处理，仅作演示。</span>';
+}
+
+/* ================= 整体重建 ================= */
+function rebuildAll() {
+  clearWorld();
+  const pts = sampleCurve();
+  buildStatic(pts);
+  buildSurface(pts);
+  buildWire();
+  buildSlices(pts);
+  buildSweep(pts);
+  fitCamera();
+  updateFormula();
+}
+
+/* ================= UI 绑定 ================= */
+const $ = id => document.getElementById(id);
+function setError(msg) {
+  const e = $('err');
+  if (msg) { e.textContent = msg; e.style.display = 'block'; }
+  else e.style.display = 'none';
+}
+
+let rebuildTimer = null;
+function scheduleRebuild() {
+  clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(rebuildAll, 120);
+}
+
+function readInputs(showErr = true) {
+  try {
+    const fn = compileFunction($('fn').value);
+    const a = parseFloat($('a').value), b = parseFloat($('b').value);
+    if (!isFinite(a) || !isFinite(b)) throw new Error('积分上下限必须是数字');
+    if (b <= a) throw new Error('需要 b > a');
+    S.fn = fn; S.fnText = $('fn').value.trim();
+    S.a = a; S.b = b;
+    setError(null);
+    return true;
+  } catch (e) {
+    if (showErr) setError('✗ ' + e.message);
+    return false;
+  }
+}
+
+$('fn').addEventListener('input', () => { if (readInputs()) scheduleRebuild(); });
+$('fn').addEventListener('change', () => { if (readInputs()) rebuildAll(); });
+$('a').addEventListener('change', () => { if (readInputs()) rebuildAll(); });
+$('b').addEventListener('change', () => { if (readInputs()) rebuildAll(); });
+
+// 旋转轴
+function setAxis(v) {
+  S.axis = v;
+  $('rbx').classList.toggle('on', v === 'x');
+  $('rby').classList.toggle('on', v === 'y');
+  document.querySelector('input[value="x"]').checked = v === 'x';
+  document.querySelector('input[value="y"]').checked = v === 'y';
+  rebuildAll();
+}
+$('rbx').addEventListener('click', () => setAxis('x'));
+$('rby').addEventListener('click', () => setAxis('y'));
+
+// 角度滑块
+$('theta').addEventListener('input', e => {
+  S.thetaDeg = +e.target.value;
+  $('thetaVal').textContent = S.thetaDeg + '°';
+  updateSurface(); updateSweep();
+});
+
+// 分割数滑块
+$('n').addEventListener('input', e => {
+  S.n = +e.target.value;
+  $('nVal').textContent = S.n;
+  clearWorld();
+  const pts = sampleCurve();
+  buildStatic(pts);
+  buildSurface(pts);
+  buildWire();
+  buildSlices(pts);
+  buildSweep(pts);
+  updateFormula();
+});
+
+// 显示选项
+$('showSurface').addEventListener('change', e => {
+  S.showSurface = e.target.checked;
+  if (surfMesh) surfMesh.visible = S.showSurface;
+  if (wireLines) wireLines.visible = S.showSurface;
+});
+$('showSlices').addEventListener('change', e => {
+  S.showSlices = e.target.checked;
+  world.children.forEach(c => { if (c.userData.isSlice) c.visible = S.showSlices; });
+});
+$('showCurve').addEventListener('change', e => {
+  S.showCurve = e.target.checked;
+  rebuildAll();
+});
+
+// 预设
+$('preset').addEventListener('change', e => {
+  const v = e.target.value;
+  if (!v) return;
+  const [f, a, b, ax] = v.split('|');
+  $('fn').value = f;
+  $('a').value = a === 'pi' ? Math.PI.toFixed(5) : a;
+  $('b').value = b === 'pi' ? Math.PI.toFixed(5) : b;
+  if (!readInputs(false)) return;
+  setAxis(ax);
+});
+
+// 播放动画
+let playing = false;
+const playBtn = $('play');
+const clock = new THREE.Clock();
+playBtn.addEventListener('click', () => {
+  playing = !playing;
+  if (playing) {
+    S.thetaDeg = 0;
+    $('theta').value = 0;
+    $('thetaVal').textContent = '0°';
+    updateSurface(); updateSweep();
+    playBtn.textContent = '⏸ 暂停演示';
+    playBtn.classList.add('playing');
+  } else {
+    playBtn.textContent = '▶ 演示旋转过程（360° 扫描）';
+    playBtn.classList.remove('playing');
+  }
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  if (playing) {
+    S.thetaDeg += dt * 120; // 约 3 秒扫完一圈
+    if (S.thetaDeg >= 360) {
+      S.thetaDeg = 360;
+      playing = false;
+      playBtn.textContent = '▶ 演示旋转过程（360° 扫描）';
+      playBtn.classList.remove('playing');
+    }
+    $('theta').value = Math.floor(S.thetaDeg);
+    $('thetaVal').textContent = Math.floor(S.thetaDeg) + '°';
+    updateSurface(); updateSweep();
+  }
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+/* ================= 启动 ================= */
+readInputs(false);
+rebuildAll();
+animate();
+</script>
+</body>
+</html>
